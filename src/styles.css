@@ -258,7 +258,6 @@ select:focus-visible {
 .chart-root {
   flex: 1 1 520px;
   min-width: 0;
-  width: 100%;
 }
 
 .hour-detail-panel {

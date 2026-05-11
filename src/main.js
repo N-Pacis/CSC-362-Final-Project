@@ -344,6 +344,8 @@ function buildControls({ regions, days, initialRegion, initialDay, onChange }) {
 }
 
 let _radialState = null;
+let _hoveredHour = null;
+let _hoverLeaveTimer = null;
 
 function focusPath(hour, locale) {
   if (!_radialState) return;
@@ -356,6 +358,8 @@ function focusPath(hour, locale) {
 
 function renderRadialChart({ rows, region, day }) {
   const isFirstRender = !_radialState;
+  _hoveredHour = null;
+  clearTimeout(_hoverLeaveTimer);
   hideHourDetailPanel();
 
   const root = d3.select(CHART_ROOT_SELECTOR);
@@ -655,15 +659,22 @@ function renderRadialChart({ rows, region, day }) {
       return `${d.key}, ${hour}:00, average ${formatValue(v)} orders. Press Enter or Space to see breakdown.`;
     })
     .on("mouseenter", (event, d) => {
+      clearTimeout(_hoverLeaveTimer);
       showTooltip(event, d);
       highlight(d.data.hour);
-      renderHourDetailPanel({
-        hour: d.data.hour, region, day, wide, locales,
-        announceEl: document.getElementById("chart-announce"),
-      });
+      if (_hoveredHour !== d.data.hour) {
+        _hoveredHour = d.data.hour;
+        renderHourDetailPanel({
+          hour: d.data.hour, region, day, wide, locales,
+          announceEl: document.getElementById("chart-announce"),
+        });
+      }
     })
     .on("mousemove", moveTooltip)
-    .on("mouseleave", hideTooltip)
+    .on("mouseleave", () => {
+      hideTooltip();
+      _hoverLeaveTimer = setTimeout(() => { _hoveredHour = null; }, 150);
+    })
     .on("focus", (event, d) => {
       showTooltipFromFocus(event, d);
       highlight(d.data.hour);
