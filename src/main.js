@@ -10,7 +10,6 @@ const LOCALE_STYLES = new Map([
 const width = 1100;
 const innerRadius = 200;
 const outerRadius = 510;
-/** Upright hour numbers sit this far inside the bar inner edge (ticks stay on the edge). */
 const hourLabelRadius = innerRadius - 22;
 const hPad = 250;
 const vPadTop = 42;
@@ -22,7 +21,6 @@ function uniq(arr) {
   return Array.from(new Set(arr));
 }
 
-/** Tooltip only: 24-hour integer → "3:00 PM" */
 function formatHourAmPm(hour24) {
   const h = ((Math.floor(hour24) % 24) + 24) % 24;
   const period = h < 12 ? "AM" : "PM";
@@ -37,7 +35,6 @@ function hideHourDetailPanel() {
   d3.select(panel).selectAll("*").remove();
 }
 
-/** Pattern defs for the side pie (ids must differ from the main radial SVG). */
 function appendDetailPatternDefs(defs) {
   defs.append("pattern")
     .attr("id", "pattern-suburban-diagonal-detail")
@@ -189,7 +186,16 @@ function renderHourDetailPanel({
     ul.selectAll("li").style("opacity", 1);
   }
 
-  const gPie = svg.append("g");
+  const togglePieKey = (key) => {
+    activeKey = activeKey === key ? null : key;
+    activeKey ? highlightKey(activeKey) : resetHighlight();
+    gPie.selectAll("path").attr("aria-pressed", d => d.data.key === activeKey ? "true" : "false");
+  };
+
+  const gPie = svg.append("g")
+    .attr("role", "group")
+    .attr("aria-label", "Locale share — activate to isolate");
+
   gPie.selectAll("path")
     .data(pieData)
     .join("path")
@@ -197,12 +203,19 @@ function renderHourDetailPanel({
       .attr("fill", d => detailPatternFill(d.data.key))
       .attr("stroke", d => detailStrokeForLocale(d.data.key))
       .attr("stroke-width", 1.25)
+      .attr("tabindex", "0")
+      .attr("role", "button")
+      .attr("aria-pressed", "false")
+      .attr("aria-label", d => `${d.data.key}: ${pctFmt((d.data.value / total) * 100)}% of average orders`)
       .style("cursor", "pointer")
       .on("mouseenter", (event, d) => highlightKey(d.data.key))
       .on("mouseleave", () => activeKey ? highlightKey(activeKey) : resetHighlight())
-      .on("click", (event, d) => {
-        activeKey = activeKey === d.data.key ? null : d.data.key;
-        activeKey ? highlightKey(activeKey) : resetHighlight();
+      .on("click", (event, d) => togglePieKey(d.data.key))
+      .on("keydown", (event, d) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          togglePieKey(d.data.key);
+        }
       });
 
   const labelArc = d3.arc().innerRadius(52).outerRadius(92);
@@ -225,12 +238,18 @@ function renderHourDetailPanel({
   ul.selectAll("li")
     .data(slices)
     .join("li")
+    .attr("tabindex", "0")
+    .attr("role", "button")
+    .attr("aria-pressed", "false")
     .style("cursor", "pointer")
     .on("mouseenter", (event, d) => highlightKey(d.key))
     .on("mouseleave", () => activeKey ? highlightKey(activeKey) : resetHighlight())
-    .on("click", (event, d) => {
-      activeKey = activeKey === d.key ? null : d.key;
-      activeKey ? highlightKey(activeKey) : resetHighlight();
+    .on("click", (event, d) => togglePieKey(d.key))
+    .on("keydown", (event, d) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        togglePieKey(d.key);
+      }
     })
     .each(function (d) {
       const li = d3.select(this);
@@ -324,15 +343,22 @@ function buildControls({ regions, days, initialRegion, initialDay, onChange }) {
   return { regionSelect, daySelect };
 }
 
-// Persistent SVG state — kept alive across region/day changes for smooth transitions.
 let _radialState = null;
+
+function focusPath(hour, locale) {
+  if (!_radialState) return;
+  const target = _radialState.segmentsGroup.selectAll("path").nodes().find(node => {
+    const d = d3.select(node).datum();
+    return d && d.data && d.data.hour === hour && d.key === locale;
+  });
+  if (target) target.focus();
+}
 
 function renderRadialChart({ rows, region, day }) {
   hideHourDetailPanel();
 
   const root = d3.select(CHART_ROOT_SELECTOR);
 
-  // --- Compute new data ---
   const filtered = rows.filter(d => d.region === region && d.day === day);
   const { hours, locales: localesUnordered, wide } = byLocaleHour(filtered);
 
@@ -386,7 +412,6 @@ function renderRadialChart({ rows, region, day }) {
     .padAngle(1.5 / innerRadius)
     .padRadius(innerRadius);
 
-  // --- Build SVG once, reuse on subsequent calls ---
   if (!_radialState) {
     const svg = root.append("svg")
       .attr("width", width)
@@ -396,7 +421,7 @@ function renderRadialChart({ rows, region, day }) {
       .attr("aria-labelledby", "chart-svg-title chart-svg-desc");
 
     const titleEl = svg.append("title").attr("id", "chart-svg-title");
-    const descEl  = svg.append("desc").attr("id", "chart-svg-desc");
+    const descEl = svg.append("desc").attr("id", "chart-svg-desc");
 
     const defs = svg.append("defs");
 
@@ -418,7 +443,6 @@ function renderRadialChart({ rows, region, day }) {
       .call(p => p.append("circle").attr("cx", 3).attr("cy", 3).attr("r", 2.3).attr("fill", "rgba(23, 107, 89, 0.75)"))
       .call(p => p.append("circle").attr("cx", 8).attr("cy", 7).attr("r", 2.3).attr("fill", "rgba(23, 107, 89, 0.75)"));
 
-    // Center label (updated on each render)
     const centerLabel = svg.append("g").attr("text-anchor", "middle")
       .append("text")
         .attr("y", -y(200))
@@ -448,13 +472,11 @@ function renderRadialChart({ rows, region, day }) {
       .attr("fill", "rgba(255,255,255,0.5)")
       .text("CLOCK");
 
-    // Segments group — arcs live here
     const segmentsGroup = svg.append("g")
       .attr("class", "segments-group")
       .attr("role", "list")
       .attr("aria-label", "Chart segments");
 
-    // Hour tick marks and labels (static — hours never change)
     svg.append("g")
         .attr("text-anchor", "middle")
         .attr("aria-hidden", "true")
@@ -475,17 +497,15 @@ function renderRadialChart({ rows, region, day }) {
             .attr("fill", "white")
             .text(h => (h % 2 === 0 ? String(h) : "")));
 
-    // Legend (static — locales never change)
     const legend = svg.append("g")
       .attr("transform", `translate(${-width / 2 - hPad + 24},${-(outerRadius + vPadTop) + 24})`)
-      .attr("role", "list")
-      .attr("aria-label", "Legend");
+      .attr("role", "group")
+      .attr("aria-label", "Legend — activate to isolate locale");
 
     const legendItems = legend.selectAll("g")
       .data(locales)
       .join("g")
         .attr("transform", (d, i) => `translate(0,${i * 35})`)
-        .attr("role", "listitem")
         .style("cursor", "pointer")
         .call(g => g.append("rect")
           .attr("width", 30).attr("height", 30)
@@ -498,18 +518,37 @@ function renderRadialChart({ rows, region, day }) {
           .attr("fill", "white").attr("font-size", 24)
           .text(d => d));
 
-    legendItems.on("click", (event, d) => {
-      event.stopPropagation();
+    legendItems
+      .attr("tabindex", "0")
+      .attr("role", "button")
+      .attr("aria-pressed", "false");
+
+    const toggleLocale = (d) => {
       const state = _radialState;
       if (state.activeLocale === d) {
         state.activeLocale = null;
         state.segmentsGroup.selectAll("g.locale-group").attr("opacity", 1);
-        legendItems.attr("opacity", 1);
+        legendItems.attr("opacity", 1).attr("aria-pressed", "false");
       } else {
         state.activeLocale = d;
         state.segmentsGroup.selectAll("g.locale-group")
           .attr("opacity", s => s.key === d ? 1 : 0.15);
-        legendItems.attr("opacity", item => item === d ? 1 : 0.4);
+        legendItems
+          .attr("opacity", item => item === d ? 1 : 0.4)
+          .attr("aria-pressed", item => item === d ? "true" : "false");
+      }
+    };
+
+    legendItems.on("click", (event, d) => {
+      event.stopPropagation();
+      toggleLocale(d);
+    });
+
+    legendItems.on("keydown", (event, d) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleLocale(d);
       }
     });
 
@@ -538,24 +577,21 @@ function renderRadialChart({ rows, region, day }) {
       requestAnimationFrame(() => closeIfOutside(document.activeElement));
     });
 
-    _radialState = { svg, titleEl, descEl, centerLabel, segmentsGroup, activeHour: null, activeLocale: null };
+    _radialState = { svg, titleEl, descEl, centerLabel, segmentsGroup, activeLocale: null };
   }
 
   const { svg, titleEl, descEl, centerLabel, segmentsGroup } = _radialState;
 
-  // Update text that changes with region/day
-  const chartTitle = `Average Starbucks orders by hour — ${region}, ${day}`;
-  const chartDesc  = `Radial bar chart showing average customer orders per hour in ${region} locale areas on ${day}. Urban (dot pattern) and Suburban (stripe pattern) locales are stacked. Each segment represents one hour on a 24-hour clock. Click a segment or press Enter or Space when focused to open an urban vs suburban breakdown beside the chart.`;
-  titleEl.text(chartTitle);
-  descEl.text(chartDesc);
+  titleEl.text(`Average Starbucks orders by hour — ${region}, ${day}`);
+  descEl.text(`Radial bar chart showing average customer orders per hour in ${region} locale areas on ${day}. Urban (dot pattern) and Suburban (stripe pattern) locales are stacked. Each segment represents one hour on a 24-hour clock. Click a segment or press Enter or Space when focused to open an urban vs suburban breakdown beside the chart.`);
   centerLabel.text(`Average orders in ${region} on ${day}`);
 
-  // Tooltip
   const tooltip = d3.select("body")
     .selectAll("div.tooltip")
     .data([null])
     .join("div")
       .attr("class", "tooltip")
+      .attr("id", "chart-tooltip")
       .attr("role", "tooltip")
       .style("opacity", 0);
 
@@ -581,7 +617,6 @@ function renderRadialChart({ rows, region, day }) {
   };
   const hideTooltip = () => tooltip.style("opacity", 0);
 
-  // Highlight helpers
   const highlight = (hour) => {
     segmentsGroup.selectAll("path").attr("opacity", d => d.data.hour === hour ? 1 : 0.15);
   };
@@ -589,7 +624,6 @@ function renderRadialChart({ rows, region, day }) {
     segmentsGroup.selectAll("path").attr("opacity", 1);
   };
 
-  // --- Update arcs with data transition ---
   const t = d3.transition().duration(750).ease(d3.easeCubicInOut);
 
   const paths = segmentsGroup.selectAll("g.locale-group")
@@ -600,7 +634,6 @@ function renderRadialChart({ rows, region, day }) {
       .attr("fill", d => patternForLocale(d.key))
       .attr("stroke", d => styleForLocale(d.key).stroke)
       .attr("stroke-width", 1.25)
-      .attr("stroke-opacity", 1)
     .selectAll("path")
     .data(S => S.map(d => (d.key = S.key, d)), d => d.data.hour)
     .join(
@@ -611,14 +644,14 @@ function renderRadialChart({ rows, region, day }) {
       exit => exit.remove()
     );
 
-  // Re-attach event handlers every render so closures reference latest region/day/wide/locales
   paths
     .attr("tabindex", "0")
-    .attr("role", "img")
+    .attr("role", "button")
+    .attr("aria-describedby", "chart-tooltip")
     .attr("aria-label", d => {
       const v = d.data[d.key];
       const hour = String(d.data.hour).padStart(2, "0");
-      return `${d.key}, ${hour}:00, average ${formatValue(v)} orders`;
+      return `${d.key}, ${hour}:00, average ${formatValue(v)} orders. Press Enter or Space to see breakdown.`;
     })
     .on("mouseenter", (event, d) => {
       showTooltip(event, d);
@@ -633,22 +666,35 @@ function renderRadialChart({ rows, region, day }) {
     .on("focus", (event, d) => {
       showTooltipFromFocus(event, d);
       highlight(d.data.hour);
-      renderHourDetailPanel({
-        hour: d.data.hour, region, day, wide, locales,
-        announceEl: document.getElementById("chart-announce"),
-      });
     })
     .on("blur", hideTooltip)
     .on("keydown", (event, d) => {
-      if ((event.key === "Escape") && !event.repeat) {
+      if (event.key === "Escape" && !event.repeat) {
         hideHourDetailPanel();
         resetHighlight();
+        return;
+      }
+      if ((event.key === "Enter" || event.key === " ") && !event.repeat) {
+        event.preventDefault();
+        renderHourDetailPanel({
+          hour: d.data.hour, region, day, wide, locales,
+          announceEl: document.getElementById("chart-announce"),
+        });
+        return;
+      }
+      const currentHourIdx = hours.indexOf(d.data.hour);
+      const currentLocaleIdx = locales.indexOf(d.key);
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        const dir = event.key === "ArrowRight" ? 1 : -1;
+        focusPath(hours[(currentHourIdx + dir + hours.length) % hours.length], d.key);
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const dir = event.key === "ArrowDown" ? 1 : -1;
+        focusPath(d.data.hour, locales[(currentLocaleIdx + dir + locales.length) % locales.length]);
       }
     });
 
-  // Transition arc paths: interpolate computed pixel radii, not raw datum objects.
-  // d3.interpolate on a stack datum loses .data.hour/.key on intermediate values,
-  // breaking the arc generator. Instead we store [innerPx, outerPx] and interpolate those.
   paths.transition(t)
     .attrTween("d", function(d) {
       const newInner = y(d[0]);
@@ -659,7 +705,7 @@ function renderRadialChart({ rows, region, day }) {
       this._current = [newInner, newOuter];
 
       const startAngle = x(d.data.hour) + angleOffset;
-      const endAngle   = x(d.data.hour) + x.bandwidth() + angleOffset;
+      const endAngle = x(d.data.hour) + x.bandwidth() + angleOffset;
       const segArc = d3.arc()
         .startAngle(startAngle)
         .endAngle(endAngle)
