@@ -29,10 +29,12 @@ function formatHourAmPm(hour24) {
 }
 
 function hideHourDetailPanel() {
-  const panel = document.querySelector(HOUR_DETAIL_SELECTOR);
-  if (!panel) return;
-  panel.hidden = true;
-  d3.select(panel).selectAll("*").remove();
+  const panel = d3.select(HOUR_DETAIL_SELECTOR);
+  if (panel.empty()) return;
+  panel.selectAll("*").remove();
+  panel.append("p")
+    .attr("class", "hour-detail-placeholder")
+    .text("Click or tap any bar to see the hour breakdown.");
 }
 
 function appendDetailPatternDefs(defs) {
@@ -89,6 +91,7 @@ function renderHourDetailPanel({
   wide,
   locales,
   announceEl,
+  autofocus = true,
 }) {
   const panel = d3.select(HOUR_DETAIL_SELECTOR);
   if (panel.empty()) return;
@@ -105,12 +108,9 @@ function renderHourDetailPanel({
   }));
   const total = d3.sum(slices, d => d.value);
 
-  panel.attr("hidden", null);
   panel.selectAll("*").remove();
 
-  const closeDetail = () => {
-    panel.attr("hidden", true).selectAll("*").remove();
-  };
+  const closeDetail = () => hideHourDetailPanel();
 
   panel.append("button")
     .attr("type", "button")
@@ -135,9 +135,9 @@ function renderHourDetailPanel({
     if (announceEl) {
       announceEl.textContent = `Hour breakdown: ${formatHourAmPm(hour)}, ${region}, ${day}. No data.`;
     }
-    requestAnimationFrame(() => {
-      panel.select(".hour-detail-close").node()?.focus();
-    });
+    if (autofocus) {
+      requestAnimationFrame(() => panel.select(".hour-detail-close").node()?.focus());
+    }
     return;
   }
 
@@ -271,9 +271,9 @@ function renderHourDetailPanel({
     announceEl.textContent = `Hour breakdown: ${formatHourAmPm(hour)}, ${region}, ${day}. ${parts}.`;
   }
 
-  requestAnimationFrame(() => {
-    panel.select(".hour-detail-close").node()?.focus();
-  });
+  if (autofocus) {
+    requestAnimationFrame(() => panel.select(".hour-detail-close").node()?.focus());
+  }
 }
 
 function formatValueForDetail(v) {
@@ -355,6 +355,7 @@ function focusPath(hour, locale) {
 }
 
 function renderRadialChart({ rows, region, day }) {
+  const isFirstRender = !_radialState;
   hideHourDetailPanel();
 
   const root = d3.select(CHART_ROOT_SELECTOR);
@@ -724,6 +725,14 @@ function renderRadialChart({ rows, region, day }) {
   if (announce) {
     announce.textContent = `Chart updated: ${region} region, ${day}. Peak orders around ${String(peakHour.hour).padStart(2, "0")}:00.`;
   }
+
+  if (isFirstRender) {
+    renderHourDetailPanel({
+      hour: peakHour.hour, region, day, wide, locales,
+      announceEl: null,
+      autofocus: false,
+    });
+  }
 }
 
 async function main() {
@@ -765,7 +774,7 @@ async function main() {
   document.addEventListener("keydown", (ev) => {
     if (ev.key !== "Escape") return;
     const p = document.querySelector(HOUR_DETAIL_SELECTOR);
-    if (!p || p.hidden) return;
+    if (!p || p.querySelector(".hour-detail-placeholder")) return;
     hideHourDetailPanel();
   });
 

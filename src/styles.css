@@ -172,7 +172,7 @@ a:hover {
 .tips-card {
   display: none;
   position: absolute;
-  bottom: calc(100% + 10px);
+  top: calc(100% + 10px);
   right: 0;
   width: 230px;
   background: #1a0f08;
@@ -271,16 +271,16 @@ select:focus-visible {
   border: 1px solid var(--rule);
   border-radius: 6px;
   color: var(--text);
-}
-
-.hour-detail-panel:not([hidden]) {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
-.hour-detail-panel[hidden] {
-  display: block !important;
-  visibility: hidden;
-  pointer-events: none;
+.hour-detail-placeholder {
+  margin: 0;
+  padding: 32px 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
 }
 
 .hour-detail-close {
